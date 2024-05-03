@@ -9,6 +9,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.actions import RegisterEventHandler
+from launch.event_handlers import OnProcessExit
 
 #ARGUMENTS = []
 #for pose_element in ['x', 'y', 'z', 'yaw']:
@@ -40,12 +42,18 @@ def generate_launch_description():
 
 
 
-    # Launch Ignition Gazebo
+    # Launch Ignition Gazebo environment
+    #ign_gazebo = IncludeLaunchDescription(
+    #    PythonLaunchDescriptionSource([
+    #        FindPackageShare('ros_ign_gazebo'), '/launch', '/ign_gazebo.launch.py'
+    #    ])
+    #)
+
     ign_gazebo = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            FindPackageShare('ros_ign_gazebo'), '/launch', '/ign_gazebo.launch.py'
-        ])
-    )
+            PythonLaunchDescriptionSource(
+                [os.path.join(get_package_share_directory('ros_ign_gazebo'),
+                              'launch', 'ign_gazebo.launch.py')]),
+            launch_arguments=[('gz_args', [' -r -v 4 empty.sdf'])])
 
 #    ExecuteProcess(
 #            cmd=['gazebo', '--verbose', '-s', 'libgazebo_ros_factory.so'],
@@ -56,6 +64,7 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         output='screen',
+        name='my_bot',
         arguments=[
             "-file", urdf_file,
             '-x', '0',
@@ -65,10 +74,29 @@ def generate_launch_description():
         ]
     )
 
+    load_joint_state_controller = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+             'joint_state_broadcaster'],
+        output='screen'
+    )
+
+    load_diff_drive_controller = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+             'diff_drive_base_controller'],
+        output='screen'
+    )
+
 
     # Launch them all!
     return LaunchDescription([
         rsp,
         ign_gazebo,
-        spawn_robot
+        spawn_robot,
+
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=load_joint_state_controller,
+                on_exit=[load_diff_drive_controller],
+            )
+        )
     ])
